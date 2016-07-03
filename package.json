@@ -1,0 +1,25 @@
+{
+  "name": "file-transfer",
+  "version": "0.0.0",
+  "description": "E2E encrypted, mdns based distributed file transfers",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "E2E",
+    "encrpted",
+    "P2P",
+    "MDNS",
+    "distributed",
+    "file",
+    "transfer"
+  ],
+  "author": "Srijan R Shetty",
+  "license": "MIT",
+  "dependencies": {
+    "hash-files": "^1.1.1",
+    "multicast-dns": "^6.0.1",
+    "network-address": "^1.1.0"
+  }
+}
