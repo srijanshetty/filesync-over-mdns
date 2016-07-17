@@ -1,8 +1,10 @@
 // Required Modules
 let helpers = require( './helpers' );
+let sync = require( './sync' );
 let net = require( 'net' );
 let multicastDNS = require( 'multicast-dns' );
 let ip = require( 'network-address' );
+let fs = require( 'fs' );
 
 // Global functions
 let hostIdentifier = helpers.hostIdentifier;
@@ -16,7 +18,12 @@ let connections = {};
 
 // Global constants
 const limit = 3;
-const syncDir = './sync';
+
+/*
+** Setup a simple file watch service which sends
+** updates regularly
+*/
+sync.initialize();
 
 // HandleRequest from a peer
 function handleRequest( data ) {
