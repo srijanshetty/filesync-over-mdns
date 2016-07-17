@@ -1,12 +1,14 @@
 HASH_ALGORITHM = 'sha256';
 
-// print an error message
-function error( message ) {
-  process.stdout.write( '[ ERROR ] ' + message + '\n' );
+module.exports = {};
+
+// Get the idenfier for the host
+module.exports.hostIdentifier = function( host, port ) {
+    return host + '::' + port;
 }
 
 // prompts the user with a question also checks regex
-function ask( question, format, callback ) {
+module.exports.ask = function( question, format, callback ) {
   var stdin = process.stdin;
   var stdout = process.stdout;
 
@@ -25,6 +27,13 @@ function ask( question, format, callback ) {
   } );
 }
 
-module.exports = {
-  'ask': ask,
-};
+// Log out messages to the console
+module.exports.logger = function logger( message ) {
+  console.log( '[ INFO ] %s\n', message );
+}
+
+// print an error message
+module.exports.error = function ( message ) {
+  console.log( '[ ERROR ] %s\n', message );
+}
+

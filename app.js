@@ -1,41 +1,38 @@
-// var helpers = require( 'helpers' );
-// let helpers = require( './helpers' );
+let helpers = require( './helpers' );
 let net = require( 'net' );
 let multicastDNS = require( 'multicast-dns' );
 let ip = require( 'network-address' );
 
-const limit = 10;
+const limit = 3;
 
+let hostIdentifier = helpers.hostIdentifier;
+let logger = helpers.logger;
 let mdns = multicastDNS();
 let name = 'application';
 let connections = {};
 let files = [ 'srijan', 'shetty' ];
 
+// HandleRequest from a peer
+function handleRequest( data ) {
+    logger( data );
+    data = JSON.parse( data.toString() );
+}
+
 let server = net.createServer( function( sock ) {
     sock.on( 'error', err => sock.destroy( err ) );
-
-    // TODO: Handle data events, initial, transfer
-    sock.on( 'data', data => console.log( data ) );
+    sock.on( 'data', handleRequest );
 } );
-
-// Log out messages to the console
-function logger( message ) {
-    let host = ip();
-    let port = server.address().port;
-
-    console.log( '[ %s::%s ] %s', host, port, message );
-}
 
 server.on( 'listening', function() {
     let host = ip();
     let port = server.address().port;
-    let id = host + '::' + port;
+    let id = hostIdentifier( host, port );
 
-    logger( 'Server is listening' );
+    logger( `${hostIdentifier( host, port )} is listening` );
 
     // connect to the host and give it an update
     function initialConnection( host, port ) {
-        let remoteId = host + '::' + port;
+        let remoteId = hostIdentifier( host, port );
 
         // don't connect to self
         if( remoteId === id ) return;
@@ -93,7 +90,7 @@ server.on( 'listening', function() {
 // server.on( 'connection', function ( sock ) {
 //     let host = sock.remoteAddress;
 //     let port = sock.remotePort;
-//     let remoteId = host + '::' + port;
+//     let remoteId = hostIdentifier( host, port ;
 //
 //     logger( `Connected to peer: ${remoteId}` );
 // } );
