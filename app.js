@@ -1,16 +1,22 @@
+// Required Modules
 let helpers = require( './helpers' );
 let net = require( 'net' );
 let multicastDNS = require( 'multicast-dns' );
 let ip = require( 'network-address' );
 
-const limit = 3;
-
+// Global functions
 let hostIdentifier = helpers.hostIdentifier;
 let logger = helpers.logger;
 let mdns = multicastDNS();
-let name = 'application';
-let connections = {};
+
+// Global variables
+let host = ip();
 let files = [ 'srijan', 'shetty' ];
+let connections = {};
+
+// Global constants
+const limit = 3;
+const syncDir = './sync';
 
 // HandleRequest from a peer
 function handleRequest( data ) {
@@ -18,19 +24,27 @@ function handleRequest( data ) {
     data = JSON.parse( data.toString() );
 }
 
+/*
+** Setup a file transfer server
+*/
 let server = net.createServer( function( sock ) {
     sock.on( 'error', err => sock.destroy( err ) );
     sock.on( 'data', handleRequest );
 } );
 
+// This function runs when the TCP server is setup
 server.on( 'listening', function() {
-    let host = ip();
     let port = server.address().port;
     let id = hostIdentifier( host, port );
 
     logger( `${hostIdentifier( host, port )} is listening` );
 
-    // connect to the host and give it an update
+    /*
+    ** Connect to a new host when it announces itself
+    ** one the wire
+    */
+
+    // Fired when we first connect to a new host
     function initialConnection( host, port ) {
         let remoteId = hostIdentifier( host, port );
 
@@ -44,7 +58,6 @@ server.on( 'listening', function() {
         let sock = connections[ remoteId ] = net.connect( port, host );
         sock.on( 'error', err => sock.destroy( err ) );
         sock.on( 'close', () => delete connections[ remoteId] );
-
         logger( `Connecting to peer: ${remoteId}` );
 
         // send files to the host
@@ -52,10 +65,22 @@ server.on( 'listening', function() {
         sock.write( JSON.stringify( { type: 'initial', data: files } ) );
     }
 
-    // Announce the existence of our peer
+    // Fired when a new host arrives on the wire, we connect to the host
+    mdns.on( 'query', function( query ) {
+        for( let answer of query.answers ) {
+            // connect to the host and send it files
+            if( answer.name === '*' && answer.type === 'SRV' ) {
+                initialConnection( answer.data.target, answer.data.port );
+            }
+        }
+    } );
+
+    /*
+    ** Keep announcing ourself on the wire
+    */
+
     function announceSelf() {
-        // If the number of peers is less than the limit,
-        // keep on trying
+        // If the number of peers is less than the limit, keep on trying
         if( Object.keys( connections ).length > limit )
             return;
 
@@ -72,16 +97,6 @@ server.on( 'listening', function() {
             ]
         } );
     }
-
-    // Only respond to queries for our channel
-    mdns.on( 'query', function( query ) {
-        for( let answer of query.answers ) {
-            // connect to the host and send it files
-            if( answer.name === '*' && answer.type === 'SRV' ) {
-                initialConnection( answer.data.target, answer.data.port );
-            }
-        }
-    } );
 
     // Announce our existence every 5s
     setInterval( announceSelf, 5000 );
