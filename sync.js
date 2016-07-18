@@ -19,23 +19,36 @@ function initialize() {
   }
 }
 
-// Add a file to the fileHash and send it across the socket
-function addToSyncDir( filename, sock ) {
+// Add a file to the localIndex
+function addToSyncDir( filename, contents ) {
   let hash = hashFiles.sync( { algorithm: ALGORITHM, files: [ filename ] } );
 
-  // TODO: Send files to the socket or not depending on which socket
   if( !fileIndex[ hash ] ) {
-    helpers.logger( `Adding ${filename} to local dir.` );
+    helpers.logger( `Adding ${filename} to local Index.` );
     fileIndex[ hash ] = filename;
-  } else {
-    helpers.logger( `${filename} already exists locally.` );
-  }
 
-  helpers.logger( JSON.stringify( fileIndex) );
+    // Write the contents if it's provided
+    if( !!contents )  {
+      fs.writeFile( path.join( syncDir, filename), contents, () => helpers.logger( `${filename} written to local dir.` ) );
+    }
+  } else {
+    helpers.logger( `${filename} is a copy.` );
+    // TODO*: better handling of sync conflicts
+  }
 };
+
+// Syncronize a peer's index with our index
+function sync( peerIndex ) {
+  return( {
+    missingFiles: Object.keys( peerIndex ).filter( hash => !fileIndex[ hash ] ),
+    extraFiles: Object.keys( fileIndex ).filter( hash => !peerIndex[ hash ] )
+  } );
+}
 
 // Export functions
 module.exports = {
   initialize: initialize,
   addToSyncDir: addToSyncDir,
+  getIndex: () => fileIndex,
+  sync: sync
 };

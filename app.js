@@ -13,11 +13,12 @@ let mdns = multicastDNS();
 
 // Global variables
 let host = ip();
-let files = [ 'srijan', 'shetty' ];
+let transferPort = null;
+let transferId = null;
 let connections = {};
 
 // Global constants
-const limit = 3;
+const transferLimit = 3;
 
 /*
 ** Setup a simple file watch service which sends
@@ -25,96 +26,140 @@ const limit = 3;
 */
 sync.initialize();
 
+// announce ourself on the wire if we have open connections left
+function announceSelf() {
+    // If we've run out of connections, skip
+    if( Object.keys( connections ).length > transferLimit ) return;
+
+    mdns.query( {
+        answers: [
+            {
+                name: '*',
+                type: 'SRV',
+                data: {
+                    target: host,
+                    port: transferPort
+                }
+            }
+        ]
+    } );
+}
+
+// Fired when we first connect to a new host
+function initialTransferConnection( remoteHost, remotePort ) {
+    let remoteId = hostIdentifier( remoteHost, remotePort );
+
+    // don't connect to self
+    if( remoteId === transferId ) return;
+
+    // If we've already connected to the host, skip
+    if( connections[ remoteId ] ) return;
+
+    // If we've run out of connections, skip
+    if( Object.keys( connections ).length > transferLimit ) return;
+
+    /*
+    ** Establish handshake with transfer server of the announcement
+    */
+    logger( `Connecting to transfer server: ${ remoteId }` );
+
+    // Get a socket
+    let sock = connections[ remoteId ] = net.connect( remotePort, remoteHost );
+
+    // Error handlers
+    sock.on( 'error', err => sock.destroy( err ) );
+    sock.on( 'close', () => delete connections[ remoteId ] );
+    sock.on( 'data', handleRequest.bind( undefined, sock ) );
+}
+
 // HandleRequest from a peer
-function handleRequest( data ) {
+function handleRequest( sock, data ) {
     logger( data );
+
+    // Handle the requests
     data = JSON.parse( data.toString() );
+
+    let remoteId = hostIdentifier( data.host, data.port );
+
+    if( data.type === 'initial' ) {
+        logger( `Initial Image request from ${ remoteId }` );
+
+        let peerIndex = data.data;
+        let { missingFiles, extraFiles }= sync.sync( peerIndex );
+
+        // Request missing files from the host
+        if( missingFiles.length > 0 ) {
+            logger( `Requesting for missing files from ${ remoteId }` );
+            sock.write( JSON.stringify( { type: 'get', data: missingFiles, host: host, port: transferPort } ) );
+        }
+
+        // Send extra files to the host
+        if( extraFiles.length > 0 ) {
+            logger( `Sending extra files to ${ remoteId }`);
+
+            for( file of extraFiles ) {
+                sock.write( JSON.stringify( { type: 'put', data: [ file, "" ], host: host, port: transferPort } ) );
+            }
+        }
+    } else if( data.type === 'get' ) {
+        logger( `Get` );
+    } else if( data.type === 'put' ) {
+        logger( `Put` );
+    }
 }
 
 /*
 ** Setup a file transfer server
 */
-let server = net.createServer( function( sock ) {
+let transferServer = net.createServer( function( sock ) {
     sock.on( 'error', err => sock.destroy( err ) );
-    sock.on( 'data', handleRequest );
+    sock.on( 'data', handleRequest.bind( undefined, sock ) ); // Send the socket along
 } );
 
-// This function runs when the TCP server is setup
-server.on( 'listening', function() {
-    let port = server.address().port;
-    let id = hostIdentifier( host, port );
-
-    logger( `${hostIdentifier( host, port )} is listening` );
+transferServer.on( 'listening', function() {
+    transferPort = transferServer.address().port;
+    transferId = hostIdentifier( host, transferPort );
+    logger( `Transfer server: ${ transferId } is listening` );
 
     /*
-    ** Connect to a new host when it announces itself
-    ** one the wire
+    ** Setup the discovery server
     */
-
-    // Fired when we first connect to a new host
-    function initialConnection( host, port ) {
-        let remoteId = hostIdentifier( host, port );
-
-        // don't connect to self
-        if( remoteId === id ) return;
-
-        // If we've already connected to the host, skip
-        if( connections[ remoteId ] ) return;
-
-        // Get a socket to the host
-        let sock = connections[ remoteId ] = net.connect( port, host );
+    let discoveryServer = net.createServer( function( sock ) {
         sock.on( 'error', err => sock.destroy( err ) );
-        sock.on( 'close', () => delete connections[ remoteId] );
-        logger( `Connecting to peer: ${remoteId}` );
-
-        // send files to the host
-        // TODO: sendInitialFileList( sock );
-        sock.write( JSON.stringify( { type: 'initial', data: files } ) );
-    }
-
-    // Fired when a new host arrives on the wire, we connect to the host
-    mdns.on( 'query', function( query ) {
-        for( let answer of query.answers ) {
-            // connect to the host and send it files
-            if( answer.name === '*' && answer.type === 'SRV' ) {
-                initialConnection( answer.data.target, answer.data.port );
-            }
-        }
     } );
 
-    /*
-    ** Keep announcing ourself on the wire
-    */
+    // This function runs when the discovery server is setup
+    discoveryServer.on( 'listening', function() {
+        let discoveryPort = discoveryServer.address().port;
+        let discoveryId = hostIdentifier( host, discoveryPort );
+        logger( `Discovery server: ${ discoveryId } is listening` );
 
-    function announceSelf() {
-        // If the number of peers is less than the limit, keep on trying
-        if( Object.keys( connections ).length > limit )
-            return;
-
-        mdns.query( {
-            answers: [
-                {
-                    name: '*',
-                    type: 'SRV',
-                    data: {
-                        target: host,
-                        port: port
-                    }
+        // Fired when a we recieve a discovery announcement from any host,
+        // including ourselves
+        mdns.on( 'query', function( query ) {
+            for( let answer of query.answers ) {
+                // Bootstrap a connection with the host
+                if( answer.name === '*' && answer.type === 'SRV' ) {
+                    initialTransferConnection( answer.data.target, answer.data.port );
                 }
-            ]
+            }
         } );
-    }
 
-    // Announce our existence every 5s
-    setInterval( announceSelf, 5000 );
+        // Announce our existence every 5s
+        setInterval( announceSelf, 5000 );
+    } );
+
+    discoveryServer.listen( 0 );
 } );
 
-// server.on( 'connection', function ( sock ) {
-//     let host = sock.remoteAddress;
-//     let port = sock.remotePort;
-//     let remoteId = hostIdentifier( host, port ;
-//
-//     logger( `Connected to peer: ${remoteId}` );
-// } );
+transferServer.on( 'connection', function ( sock ) {
+    let remoteHost = helpers.simpleHost( sock.remoteAddress );
+    let remotePort = sock.remotePort;
+    let remoteId = hostIdentifier( remoteHost, remotePort );
 
-server.listen( 0 );
+    sock.write( JSON.stringify( { type: 'initial', data: sync.getIndex(), host: host, port: transferPort } ) );
+
+    logger( `Connected to peer: ${ remoteId }` );
+} );
+
+transferServer.listen( 0 );

@@ -7,6 +7,13 @@ module.exports.hostIdentifier = function( host, port ) {
     return host + '::' + port;
 }
 
+// Get the normalized IP
+module.exports.simpleHost = function( host ) {
+  let indexOfColon = host.lastIndexOf(':');
+  let newHost = host.substring( indexOfColon + 1, host.length );
+  return( newHost );
+}
+
 // prompts the user with a question also checks regex
 module.exports.ask = function( question, format, callback ) {
   var stdin = process.stdin;
@@ -29,11 +36,11 @@ module.exports.ask = function( question, format, callback ) {
 
 // Log out messages to the console
 module.exports.logger = function logger( message ) {
-  console.log( '[ INFO ] %s\n', message );
+  console.log( '[ INFO ] %s', message );
 }
 
 // print an error message
 module.exports.error = function ( message ) {
-  console.log( '[ ERROR ] %s\n', message );
+  console.log( '[ ERROR ] %s', message );
 }
 
