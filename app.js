@@ -15,7 +15,8 @@ let mdns = multicastDNS();
 let host = ip();
 let transferPort = null;
 let transferId = null;
-let connections = {};
+let servers = {};
+let clients = {};
 
 // Global constants
 const transferLimit = 3;
@@ -29,7 +30,7 @@ sync.initialize();
 // announce ourself on the wire if we have open connections left
 function announceSelf() {
     // If we've run out of connections, skip
-    if( Object.keys( connections ).length > transferLimit ) return;
+    if( Object.keys( clients ).length > transferLimit ) return;
 
     mdns.query( {
         answers: [
@@ -53,10 +54,10 @@ function initialTransferConnection( remoteHost, remotePort ) {
     if( remoteId === transferId ) return;
 
     // If we've already connected to the host, skip
-    if( connections[ remoteId ] ) return;
+    if( servers[ remoteId ] ) return;
 
     // If we've run out of connections, skip
-    if( Object.keys( connections ).length > transferLimit ) return;
+    if( Object.keys( servers ).length > transferLimit ) return;
 
     /*
     ** Establish handshake with transfer server of the announcement
@@ -64,11 +65,16 @@ function initialTransferConnection( remoteHost, remotePort ) {
     logger( `Connecting to transfer server: ${ remoteId }` );
 
     // Get a socket
-    let sock = connections[ remoteId ] = net.connect( remotePort, remoteHost );
+    let sock = servers[ remoteId ] = net.connect( remotePort, remoteHost );
 
     // Error handlers
     sock.on( 'error', err => sock.destroy( err ) );
-    sock.on( 'close', () => delete connections[ remoteId ] );
+    sock.on( 'close', () => delete servers[ remoteId ] );
+
+    /*
+    ** When we connect to a server, it will send an initial image,
+    ** the processing of the initial image happens over here.
+    */
     sock.on( 'data', handleRequest.bind( undefined, sock ) );
 }
 
@@ -130,8 +136,7 @@ transferServer.on( 'listening', function() {
 
     // This function runs when the discovery server is setup
     discoveryServer.on( 'listening', function() {
-        let discoveryPort = discoveryServer.address().port;
-        let discoveryId = hostIdentifier( host, discoveryPort );
+        let discoveryId = hostIdentifier( host, discoveryServer.address().port );
         logger( `Discovery server: ${ discoveryId } is listening` );
 
         // Fired when a we recieve a discovery announcement from any host,
@@ -153,13 +158,12 @@ transferServer.on( 'listening', function() {
 } );
 
 transferServer.on( 'connection', function ( sock ) {
-    let remoteHost = helpers.simpleHost( sock.remoteAddress );
-    let remotePort = sock.remotePort;
-    let remoteId = hostIdentifier( remoteHost, remotePort );
+    let remoteId = hostIdentifier( helpers.simpleHost( sock.remoteAddress ), sock.remotePort );
 
-    sock.write( JSON.stringify( { type: 'initial', data: sync.getIndex(), host: host, port: transferPort } ) );
-
+    // Whenever a peer gets connected to our transfer server, we send it the first image
     logger( `Connected to peer: ${ remoteId }` );
+    sock.write( JSON.stringify( { type: 'initial', data: sync.getIndex(), host: host, port: transferPort } ) );
+    clients[ remoteId ] = sock;
 } );
 
 transferServer.listen( 0 );
