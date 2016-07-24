@@ -1,4 +1,5 @@
-HASH_ALGORITHM = 'sha256';
+const HASH_ALGORITHM = 'sha256';
+const LOG_LEVEL = 1;
 
 module.exports = {};
 
@@ -35,12 +36,14 @@ module.exports.ask = function( question, format, callback ) {
 }
 
 // Log out messages to the console
-module.exports.logger = function logger( message ) {
-  console.log( '[ INFO ] %s', message );
+module.exports.logger = function logger( message, level = 1 ) {
+  if( level <= LOG_LEVEL )
+    console.log( '[ INFO ] %s', message );
 }
 
 // print an error message
-module.exports.error = function ( message ) {
-  console.log( '[ ERROR ] %s', message );
+module.exports.error = function ( message, level ) {
+  if( level < LOG_LEVEL )
+    console.log( '[ ERROR ] %s', message );
 }
 

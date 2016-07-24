@@ -24,15 +24,15 @@ function addToSyncDir( filename, contents ) {
   let hash = hashFiles.sync( { algorithm: ALGORITHM, files: [ filename ] } );
 
   if( !fileIndex[ hash ] ) {
-    helpers.logger( `Adding ${filename} to local Index.` );
+    helpers.logger( `FILEINDEX: Adding ${filename} to local Index.`, 5 );
     fileIndex[ hash ] = filename;
 
     // Write the contents if it's provided
     if( !!contents )  {
-      fs.writeFile( path.join( syncDir, filename), contents, () => helpers.logger( `${filename} written to local dir.` ) );
+      fs.writeFile( path.join( syncDir, filename), contents, () => helpers.logger( `${filename} written to local dir.`, 5 ) );
     }
   } else {
-    helpers.logger( `${filename} is a copy.` );
+    helpers.logger( `FILEINDEX: ${filename} is a copy.`, 5 );
     // TODO*: better handling of sync conflicts
   }
 };
