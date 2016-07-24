@@ -91,43 +91,51 @@ function handleRequest( sock, data ) {
         logger( `INITIAL: Initial Image request from ${ remoteId }` );
 
         let peerIndex = data.data;
-        let { missingHashes, extraHashes } = sync.sync( peerIndex );
+        let { missingFiles, extraFiles } = sync.syncWithIndex( peerIndex );
 
         // Request missing files from the host
-        if( missingHashes.length > 0 ) {
+        if( missingFiles.length > 0 ) {
             logger( `INITIAL: Requesting for missing files from ${ remoteId }` );
-            sock.write( JSON.stringify( { type: 'GET', data: missingHashes, host: host, port: transferPort } ) );
+            sock.write( JSON.stringify( { type: 'GET', data: missingFiles, host: host, port: transferPort } ) );
         }
 
         // Send extra files to the host
-        if( extraHashes.length > 0 ) {
+        if( extraFiles.length > 0 ) {
             logger( `INITIAL: Sending extra files to ${ remoteId }` );
 
-            for( let hash of extraHashes ) {
-                let { fileName, fileContents } = sync.getFile( hash );
-                sock.write( JSON.stringify( { type: 'PUT', data: [ hash, fileName, fileContents ], host: host, port: transferPort } ) );
+            let payload = [];
+            for( let fileName of extraFiles ) {
+                let { hash, fileContents } = sync.getFromIndex( fileName );
+                payload.push( [ hash, fileName, fileContents ] );
             }
+            sock.write( JSON.stringify( { type: 'PUT', data: payload, host: host, port: transferPort } ) );
         }
     } else if( data.type === 'GET' ) {
         // We have gotten a GET request from a peer, we'll send it the file
-        let hashes = data.data;
+        let fileNames = data.data;
 
-        logger( `GET: ${ hashes }` );
+        logger( `GET: ${ fileNames } from local index` );
 
         // Send PUTs for all the hashes that we get
-        for( let hash of hashes ) {
-            let { fileName, fileContents } = sync.getFile( hash );
-            sock.write( JSON.stringify( { type: 'PUT', data: [ hash, fileName, fileContents ], host: host, port: transferPort } ) );
+        let payload = [];
+        for( let fileName of fileNames ) {
+            let { hash, fileContents } = sync.getFromIndex( fileName );
+            payload.push( [ hash, fileName, fileContents ] );
         }
+        sock.write( JSON.stringify( { type: 'PUT', data: payload, host: host, port: transferPort } ) );
     } else if( data.type === 'PUT' ) {
         // We have gotten a PUT request, we store the file to our sync dir
-        let hash = data.data[ 0 ];
-        let fileName = data.data[ 1 ];
-        let fileContents = data.data[ 2 ];
+        let payload = data.data;
 
-        // Add to local Index
-        logger( `PUT: ${ fileName }` );
-        sync.addToSyncDir( hash, fileName, fileContents );
+        for( let item of payload ) {
+            let hash = item[ 0 ];
+            let fileName = item[ 1 ];
+            let fileContents = item[ 2 ];
+
+            // Add to local Index
+            logger( `PUT: ${ fileName } to local index` );
+            sync.addToIndex( hash, fileName, fileContents );
+        }
     }
 }
 
