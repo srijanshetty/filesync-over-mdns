@@ -87,30 +87,47 @@ function handleRequest( sock, data ) {
 
     let remoteId = hostIdentifier( data.host, data.port );
 
-    if( data.type === 'initial' ) {
-        logger( `Initial Image request from ${ remoteId }` );
+    if( data.type === 'INITIAL' ) {
+        logger( `INITIAL: Initial Image request from ${ remoteId }` );
 
         let peerIndex = data.data;
-        let { missingFiles, extraFiles }= sync.sync( peerIndex );
+        let { missingHashes, extraHashes } = sync.sync( peerIndex );
 
         // Request missing files from the host
-        if( missingFiles.length > 0 ) {
-            logger( `Requesting for missing files from ${ remoteId }` );
-            sock.write( JSON.stringify( { type: 'get', data: missingFiles, host: host, port: transferPort } ) );
+        if( missingHashes.length > 0 ) {
+            logger( `INITIAL: Requesting for missing files from ${ remoteId }` );
+            sock.write( JSON.stringify( { type: 'GET', data: missingHashes, host: host, port: transferPort } ) );
         }
 
         // Send extra files to the host
-        if( extraFiles.length > 0 ) {
-            logger( `Sending extra files to ${ remoteId }`);
+        if( extraHashes.length > 0 ) {
+            logger( `INITIAL: Sending extra files to ${ remoteId }` );
 
-            for( file of extraFiles ) {
-                sock.write( JSON.stringify( { type: 'put', data: [ file, "" ], host: host, port: transferPort } ) );
+            for( let hash of extraHashes ) {
+                let { fileName, fileContents } = sync.getFile( hash );
+                sock.write( JSON.stringify( { type: 'PUT', data: [ hash, fileName, fileContents ], host: host, port: transferPort } ) );
             }
         }
-    } else if( data.type === 'get' ) {
-        logger( `Get` );
-    } else if( data.type === 'put' ) {
-        logger( `Put` );
+    } else if( data.type === 'GET' ) {
+        // We have gotten a GET request from a peer, we'll send it the file
+        let hashes = data.data;
+
+        logger( `GET: ${ hashes }` );
+
+        // Send PUTs for all the hashes that we get
+        for( let hash of hashes ) {
+            let { fileName, fileContents } = sync.getFile( hash );
+            sock.write( JSON.stringify( { type: 'PUT', data: [ hash, fileName, fileContents ], host: host, port: transferPort } ) );
+        }
+    } else if( data.type === 'PUT' ) {
+        // We have gotten a PUT request, we store the file to our sync dir
+        let hash = data.data[ 0 ];
+        let fileName = data.data[ 1 ];
+        let fileContents = data.data[ 2 ];
+
+        // Add to local Index
+        logger( `PUT: ${ fileName }` );
+        sync.addToSyncDir( hash, fileName, fileContents );
     }
 }
 
@@ -162,7 +179,7 @@ transferServer.on( 'connection', function ( sock ) {
 
     // Whenever a peer gets connected to our transfer server, we send it the first image
     logger( `Connected to peer: ${ remoteId }` );
-    sock.write( JSON.stringify( { type: 'initial', data: sync.getIndex(), host: host, port: transferPort } ) );
+    sock.write( JSON.stringify( { type: 'INITIAL', data: sync.getIndex(), host: host, port: transferPort } ) );
     clients[ remoteId ] = sock;
 } );
 

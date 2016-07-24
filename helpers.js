@@ -1,5 +1,5 @@
 const HASH_ALGORITHM = 'sha256';
-const LOG_LEVEL = 1;
+const LOG_LEVEL = 10;
 
 module.exports = {};
 
