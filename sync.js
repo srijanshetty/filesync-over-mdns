@@ -59,6 +59,17 @@ function readDir( readFile ) {
 
 // Initialize the syncing process
 function initialize() {
+  /*
+  ** Make sure that dir exists
+  */
+  try {
+      fs.accessSync( syncDir, fs.F_OK);
+      helpers.logger( `FILE INDEX: ${ syncDir } exists`, 11 );
+  } catch (e) {
+      helpers.logger( `FILE INDEX: ${ syncDir } doesn't exist, creating it.`, 5 );
+      fs.mkdirSync( syncDir );
+  }
+
   // Add files to the syncDir
   readDir();
 
