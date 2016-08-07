@@ -41,7 +41,7 @@ function initializeWatch() {
         if( eventType === 'change' ) {
           let hash = hashFiles.sync( { algorithm: ALGORITHM, files: [ filePath( fileName ) ] } );
           let fileContents = fs.readFileSync( filePath( fileName ), ENCODING );
-          addToIndex( hash, fileName, fileContents );
+          addToIndex( { hash, fileName, fileContents } );
         }
       }, 5000 );
     }
@@ -53,7 +53,7 @@ function readDir( readFile ) {
   let fileNames = fs.readdirSync( syncDir );
   for( fileName of fileNames ) {
     let hash = hashFiles.sync( { algorithm: ALGORITHM, files: [ filePath( fileName ) ] } );
-    addToIndex( hash, fileName );
+    addToIndex( { hash, fileName } );
   }
 }
 
@@ -64,9 +64,9 @@ function initialize() {
   */
   try {
       fs.accessSync( syncDir, fs.F_OK);
-      helpers.logger( `FILE INDEX: ${ syncDir } exists`, 11 );
+      helpers.logger( `LOCAL INDEX: ${ syncDir } exists`, 11 );
   } catch (e) {
-      helpers.logger( `FILE INDEX: ${ syncDir } doesn't exist, creating it.`, 5 );
+      helpers.logger( `LOCAL INDEX: ${ syncDir } doesn't exist, creating it.`, 5 );
       fs.mkdirSync( syncDir );
   }
 
@@ -81,24 +81,27 @@ function initialize() {
 }
 
 // Add a file to the localIndex
-function addToIndex( hash, fileName, fileContents ) {
+function addToIndex( { hash, fileName, fileContents = undefined, emit = true } ) {
   if( !fileIndex[ fileName ] ) {
-    helpers.logger( `FILEINDEX: Adding ${ fileName } to local Index.`, 5 );
+    helpers.logger( `LOCAL INDEX: Adding ${ fileName } to local Index.`, 5 );
     fileIndex[ fileName ] = hash;
 
     // Only write if fileContents is provided
     if( fileContents ) {
-      fs.writeFile( filePath( fileName ), fileContents, () => helpers.logger( `${ fileName } written to local dir.`, 11 ) );
+      fs.writeFile( filePath( fileName ), fileContents, () => helpers.logger( `SYNC DIR: ${ fileName } written to local dir.`, 11 ) );
 
       // fire an event if the file updates
-      fileEvents.emit( 'UPDATE', hash, fileName, fileContents );
+      if( emit ) {
+        helpers.logger( `LOCAL INDEX: Emitting UPDATE for ${ fileName }`, 5 );
+        fileEvents.emit( 'UPDATE', hash, fileName, fileContents );
+      }
 
     }
   } else {
     if( fileIndex[ fileName ] === hash ) {
-      helpers.logger( `LOCALINDEX: ${ fileName } is identical to index copy, skipping add`, 11 );
+      helpers.logger( `LOCAL INDEX: ${ fileName } is identical to index copy, skipping add`, 11 );
     } else {
-      helpers.logger( `LOCALINDEX: ${ fileName } is not identical to index copy, updating index`)
+      helpers.logger( `LOCAL INDEX: ${ fileName } is not identical to index copy, updating index`)
       fileIndex[ fileName ] = hash;
 
       // Only write if fileContents is provided
@@ -106,7 +109,10 @@ function addToIndex( hash, fileName, fileContents ) {
         fs.writeFile( filePath( fileName ), fileContents, () => helpers.logger( `${ fileName } written to local dir.`, 11 ) );
 
         // fire an event if the file updates
-        fileEvents.emit( 'UPDATE', hash, fileName, fileContents );
+        if( emit ) {
+          helpers.logger( `LOCAL INDEX: Emitting UPDATE for ${ fileName }`, 7 );
+          fileEvents.emit( 'UPDATE', hash, fileName, fileContents );
+        }
       }
     }
   }

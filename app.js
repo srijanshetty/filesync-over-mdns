@@ -146,7 +146,7 @@ function handleRequest( sock, data ) {
 
             // Add to local Index
             logger( `PUT: ${ fileName } sent from ${ hostIdentifier( data.host, data.port ) }` );
-            sync.addToIndex( hash, fileName, fileContents );
+            sync.addToIndex( { hash, fileName, fileContents } );
         }
     }
 }
