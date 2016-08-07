@@ -3,6 +3,7 @@ let fs = require( 'fs' );
 let path = require( 'path' );
 let hashFiles = require( 'hash-files' );
 let helpers = require( './helpers' );
+let events = require( 'events' );
 
 // Global constants
 const ALGORITHM = 'sha256';
@@ -12,21 +13,43 @@ const ENCODING = 'utf-8';
 // The fileIndex which stores all the files
 let fileIndex = {};
 
+// Event emitter so that the application can respond to events
+let fileEvents = new events.EventEmitter();
+
 // Get the filePath
 function filePath( fileName ) {
   return path.join( syncDir, fileName );
 }
 
+// This helps throttle events on the same file
+let fsTimeout = {};
+
 // File Watcher service
 function initializeWatch() {
-  fs.watch( syncDir, function() {
+  fs.watch( syncDir, ( eventType, fileName ) => {
     // TODO: This could made faster using a patch-diff system
-    readDir();
+
+    /*
+     ** The timeout makes sure that we don't handle multiple
+     ** events originating from the same eventTYpe, fileName pari
+    */
+    if( !fsTimeout[ eventType + fileName ] ) {
+      setTimeout( () => {
+        fsTimeout[ eventType + fileName ] = null;
+
+        // TODO: handle removes
+        if( eventType === 'change' ) {
+          let hash = hashFiles.sync( { algorithm: ALGORITHM, files: [ filePath( fileName ) ] } );
+          let fileContents = fs.readFileSync( filePath( fileName ), ENCODING );
+          addToIndex( hash, fileName, fileContents );
+        }
+      }, 5000 );
+    }
   } );
 }
 
 // Function to read all files in dir and add it to Index
-function readDir() {
+function readDir( readFile ) {
   let fileNames = fs.readdirSync( syncDir );
   for( fileName of fileNames ) {
     let hash = hashFiles.sync( { algorithm: ALGORITHM, files: [ filePath( fileName ) ] } );
@@ -40,7 +63,10 @@ function initialize() {
   readDir();
 
   // Initialize the file sync service
-  // initializeWatch();
+  initializeWatch();
+
+  // return the eventEmitter
+  return fileEvents;
 }
 
 // Add a file to the localIndex
@@ -51,11 +77,15 @@ function addToIndex( hash, fileName, fileContents ) {
 
     // Only write if fileContents is provided
     if( fileContents ) {
-      fs.writeFile( filePath( fileName ), fileContents, () => helpers.logger( `${ fileName } written to local dir.`, 5 ) );
+      fs.writeFile( filePath( fileName ), fileContents, () => helpers.logger( `${ fileName } written to local dir.`, 11 ) );
+
+      // fire an event if the file updates
+      fileEvents.emit( 'UPDATE', hash, fileName, fileContents );
+
     }
   } else {
     if( fileIndex[ fileName ] === hash ) {
-      helpers.logger( `LOCALINDEX: ${ fileName } is identical to index copy, skipping add`, 5 );
+      helpers.logger( `LOCALINDEX: ${ fileName } is identical to index copy, skipping add`, 11 );
     } else {
       helpers.logger( `LOCALINDEX: ${ fileName } is not identical to index copy, updating index`)
       fileIndex[ fileName ] = hash;
@@ -63,6 +93,9 @@ function addToIndex( hash, fileName, fileContents ) {
       // Only write if fileContents is provided
       if( fileContents ) {
         fs.writeFile( filePath( fileName ), fileContents, () => helpers.logger( `${ fileName } written to local dir.`, 11 ) );
+
+        // fire an event if the file updates
+        fileEvents.emit( 'UPDATE', hash, fileName, fileContents );
       }
     }
   }

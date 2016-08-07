@@ -24,8 +24,20 @@ const transferLimit = 3;
 /*
 ** Setup a simple file watch service which sends
 ** updates regularly
+**
+** Also setup a handler for fileEvents update
 */
-sync.initialize();
+let fileEvents = sync.initialize();
+fileEvents.on( 'UPDATE', function( hash, fileName, fileContents ) {
+    // We'll send a put request to all the clients
+    for( let remoteId of Object.keys( servers ) ) {
+        let sock = servers[ remoteId ];
+        let payload = [ [ hash, fileName, fileContents ] ];
+
+        logger( `FILE EVENT: Sending newly added file ${fileName} to ${ remoteId }` );
+        sock.write( JSON.stringify( { type: 'PUT', data: payload, host: host, port: transferPort } ) );
+    }
+} );
 
 // announce ourself on the wire if we have open connections left
 function announceSelf() {
@@ -80,7 +92,7 @@ function initialTransferConnection( remoteHost, remotePort ) {
 
 // HandleRequest from a peer
 function handleRequest( sock, data ) {
-    logger( data );
+    logger( data, 11 );
 
     // Handle the requests
     data = JSON.parse( data.toString() );
@@ -114,7 +126,7 @@ function handleRequest( sock, data ) {
         // We have gotten a GET request from a peer, we'll send it the file
         let fileNames = data.data;
 
-        logger( `GET: ${ fileNames } from local index` );
+        logger( `GET: Request ${ fileNames } from ${ hostIdentifier( data.host, data.port )}` );
 
         // Send PUTs for all the hashes that we get
         let payload = [];
@@ -133,7 +145,7 @@ function handleRequest( sock, data ) {
             let fileContents = item[ 2 ];
 
             // Add to local Index
-            logger( `PUT: ${ fileName } to local index` );
+            logger( `PUT: ${ fileName } sent from ${ hostIdentifier( data.host, data.port ) }` );
             sync.addToIndex( hash, fileName, fileContents );
         }
     }
